@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>우리 동네 아파트 전월세 실거래가 대시보드</title>
+    <!-- Tailwind CSS for Layout -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js for Visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- PapaParse for CSV Parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #f5f5f7;
+            color: #1d1d1f;
+        }
+
+        .bento-card {
+            background: #ffffff;
+            border-radius: 1.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .bento-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08);
+        }
+
+        .table-container::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .table-container::-webkit-scrollbar-thumb {
+            background-color: #d1d1d6;
+            border-radius: 3px;
+        }
+
+        .summary-label {
+            color: #86868b;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        .summary-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #1d1d1f;
+        }
+
+        .gradient-text {
+            background: linear-gradient(90deg, #1d1d1f 0%, #434343 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* Custom Dropdown Styling */
+        select {
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2386868b' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 0.5rem center;
+            background-size: 0.8rem;
+        }
+
+        .sort-header {
+            cursor: pointer;
+            transition: background-color 0.2s;
+            user-select: none;
+        }
+        .sort-header:hover {
+            background-color: #f9f9fb;
+        }
+
+        .sort-icon-wrapper {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            line-height: 0.8;
+            margin-left: 6px;
+            vertical-align: middle;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <div class="max-w-7xl mx-auto">
+        <!-- Header -->
+        <header class="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
+            <div>
+                <h1 class="text-3xl md:text-4xl font-bold tracking-tight gradient-text">
+                    우리 동네 아파트 전월세 실거래가 대시보드
+                </h1>
+                <p class="text-gray-500 mt-2">최신 실거래 정보를 바탕으로 한 시장 분석 리포트 (단위: 천원)</p>
+            </div>
+            
+            <!-- Global Filter: District -->
+            <div class="flex items-center gap-4 bg-white p-2 rounded-2xl shadow-sm border border-gray-100">
+                <label for="districtFilter" class="pl-3 text-sm font-semibold text-gray-500 flex items-center gap-2">
+                    <i data-lucide="map-pin" class="w-4 h-4"></i> 법정동
+                </label>
+                <select id="districtFilter" class="bg-gray-50 border-none text-gray-900 text-sm rounded-xl focus:ring-blue-500 focus:border-blue-500 block w-40 p-2.5 outline-none transition-all hover:bg-gray-100 cursor-pointer">
+                    <option value="전체">전체 보기</option>
+                </select>
+                <div id="loadingStatus" class="hidden text-xs font-medium text-blue-600 bg-blue-50 px-3 py-1 rounded-full animate-pulse">
+                    데이터 로드 중...
+                </div>
+            </div>
+        </header>
+
+        <!-- Bento Grid Layout -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+            
+            <!-- Summary Cards -->
+            <div class="bento-card p-6 flex flex-col justify-between">
+                <div><i data-lucide="activity" class="text-blue-500 mb-4"></i><p class="summary-label">거래 건수</p></div>
+                <p id="totalCount" class="summary-value">0건</p>
+            </div>
+            <div class="bento-card p-6 flex flex-col justify-between">
+                <div><i data-lucide="wallet" class="text-emerald-500 mb-4"></i><p class="summary-label">평균 보증금 (천원)</p></div>
+                <p id="avgDeposit" class="summary-value">0천원</p>
+            </div>
+            <div class="bento-card p-6 flex flex-col justify-between">
+                <div><i data-lucide="trending-up" class="text-orange-500 mb-4"></i><p class="summary-label">최고 보증금 (천원)</p></div>
+                <p id="maxDeposit" class="summary-value">0천원</p>
+            </div>
+            <div class="bento-card p-6 flex flex-col justify-between">
+                <div><i data-lucide="coins" class="text-purple-500 mb-4"></i><p class="summary-label">평균 월세 (천원)</p></div>
+                <p id="avgRent" class="summary-value">0천원</p>
+            </div>
+
+            <!-- Chart Section -->
+            <div class="bento-card p-8 md:col-span-4">
+                <h3 class="text-xl font-bold mb-6 flex items-center gap-2">
+                    <i data-lucide="bar-chart-3" class="w-5 h-5"></i>
+                    <span id="chartTitle">월별 평균 거래 추이</span>
+                </h3>
+                <div class="h-[350px] w-full">
+                    <canvas id="monthlyChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Transaction Table Section -->
+            <div class="bento-card p-8 md:col-span-4 overflow-hidden">
+                <!-- Section Header with Inline Filters -->
+                <div class="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
+                    <h3 class="text-xl font-bold flex items-center gap-2 whitespace-nowrap">
+                        <i data-lucide="list" class="w-5 h-5"></i>
+                        실거래 상세 목록
+                    </h3>
+                    
+                    <div class="flex flex-wrap items-center gap-3">
+                        <!-- Apartment Filter -->
+                        <div class="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-xl border border-gray-100">
+                            <span class="text-xs font-bold text-gray-400">아파트</span>
+                            <select id="aptFilter" class="bg-transparent text-sm font-semibold text-gray-700 outline-none pr-6 cursor-pointer">
+                                <option value="전체">전체 아파트</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Area Filter -->
+                        <div class="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-xl border border-gray-100">
+                            <span class="text-xs font-bold text-gray-400">면적(㎡)</span>
+                            <select id="areaFilter" class="bg-transparent text-sm font-semibold text-gray-700 outline-none pr-6 cursor-pointer">
+                                <option value="전체">전체 면적</option>
+                            </select>
+                        </div>
+
+                        <span id="tableCount" class="text-xs text-gray-400 font-medium ml-2"></span>
+                    </div>
+                </div>
+
+                <div class="table-container overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead>
+                            <tr class="border-b border-gray-100">
+                                <th class="pb-4 font-semibold text-gray-500">계약일</th>
+                                <th class="pb-4 font-semibold text-gray-500">아파트명</th>
+                                <th class="pb-4 font-semibold text-gray-500">법정동</th>
+                                <th class="pb-4 font-semibold text-gray-500">면적(㎡)</th>
+                                <th class="pb-4 font-semibold text-gray-500">층</th>
+                                
+                                <!-- 다중 정렬 적용: 보증금 -->
+                                <th id="headerDeposit" onclick="togglePriceSort('deposit')" class="sort-header pb-4 font-semibold text-right text-gray-500">
+                                    보증금 (천원)
+                                    <div class="sort-icon-wrapper" id="icon-deposit">
+                                        <span class="sort-up text-black transition-colors duration-200">▲</span>
+                                        <span class="sort-down text-black transition-colors duration-200">▼</span>
+                                    </div>
+                                </th>
+                                
+                                <!-- 다중 정렬 적용: 월세 -->
+                                <th id="headerRent" onclick="togglePriceSort('rent')" class="sort-header pb-4 font-semibold text-right text-gray-500">
+                                    월세 (천원)
+                                    <div class="sort-icon-wrapper" id="icon-rent">
+                                        <span class="sort-up text-black transition-colors duration-200">▲</span>
+                                        <span class="sort-down text-black transition-colors duration-200">▼</span>
+                                    </div>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody" class="divide-y divide-gray-50">
+                            <!-- Data rows will be injected here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="mt-16 mb-8 text-center text-gray-400 text-sm">
+            <p>© 2026 LEARNTOPIA. All Rights Reserved.</p>
+        </footer>
+    </div>
+
+    <script>
+        const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTyuEewy9h-neoJ9FGkA3r0R9RZKHXZMWfeIzEZLwWJ8Ek3TJ-m9bOzpXxzGL4du5ipgMR9JD9ADTJO/pub?gid=1671412193&single=true&output=csv';
+        
+        let rawData = [];
+        let myChart = null;
+
+        // 1차, 2차 다중 정렬을 관리하기 위한 상태 객체
+        let priceSorts = {
+            deposit: null, // 'asc' | 'desc' | null
+            rent: null,    // 'asc' | 'desc' | null
+            order: []      // 예: 클릭 순서대로 ['deposit', 'rent']가 저장되어 다중 조건 적용
+        };
+
+        async function initDashboard() {
+            lucide.createIcons();
+            const loading = document.getElementById('loadingStatus');
+            loading.classList.remove('hidden');
+            
+            Papa.parse(CSV_URL, {
+                download: true,
+                header: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    rawData = results.data;
+                    initDistrictFilter(rawData);
+                    updateDashboard(true);
+                    loading.classList.add('hidden');
+                }
+            });
+
+            document.getElementById('districtFilter').addEventListener('change', () => updateDashboard(true));
+            document.getElementById('aptFilter').addEventListener('change', () => updateDashboard(false));
+            document.getElementById('areaFilter').addEventListener('change', () => updateDashboard(false));
+        }
+
+        function initDistrictFilter(data) {
+            const filter = document.getElementById('districtFilter');
+            const districts = [...new Set(data.map(item => item['법정동']))].sort();
+            districts.forEach(dist => {
+                const option = document.createElement('option');
+                option.value = dist;
+                option.textContent = dist;
+                filter.appendChild(option);
+            });
+        }
+
+        function updateSubFilters(filteredByDistrict) {
+            const aptFilter = document.getElementById('aptFilter');
+            const areaFilter = document.getElementById('areaFilter');
+
+            const apts = [...new Set(filteredByDistrict.map(item => item['아파트명']))].sort();
+            aptFilter.innerHTML = '<option value="전체">전체 아파트</option>';
+            apts.forEach(apt => {
+                const opt = document.createElement('option');
+                opt.value = apt;
+                opt.textContent = apt;
+                aptFilter.appendChild(opt);
+            });
+
+            const areaInts = [...new Set(filteredByDistrict.map(item => Math.floor(parseFloat(item['전용면적'] || 0))))].sort((a, b) => a - b);
+            areaFilter.innerHTML = '<option value="전체">전체 면적</option>';
+            areaInts.forEach(areaInt => {
+                const opt = document.createElement('option');
+                opt.value = areaInt;
+                opt.textContent = `${areaInt}㎡ 타입`;
+                areaFilter.appendChild(opt);
+            });
+        }
+
+        // 보증금/월세 다중 정렬 토글 함수
+        function togglePriceSort(col) {
+            // 상태 순환: null -> asc -> desc -> null
+            if (priceSorts[col] === null) {
+                priceSorts[col] = 'asc';
+                priceSorts.order.push(col); // 정렬 우선순위(1차, 2차) 배열에 추가
+            } else if (priceSorts[col] === 'asc') {
+                priceSorts[col] = 'desc';
+            } else {
+                priceSorts[col] = null;
+                // 정렬 해제 시 우선순위 배열에서 제거
+                priceSorts.order = priceSorts.order.filter(item => item !== col);
+            }
+            
+            updateSortIcons();
+            updateDashboard(false);
+        }
+
+        // 기호 위치 및 색상 UI 업데이트
+        function updateSortIcons() {
+            ['deposit', 'rent'].forEach(col => {
+                const state = priceSorts[col];
+                const upIcon = document.querySelector(`#icon-${col} .sort-up`);
+                const downIcon = document.querySelector(`#icon-${col} .sort-down`);
+                
+                // 클래스 초기화 (기본값 검정색)
+                upIcon.className = 'sort-up transition-colors duration-200 text-black';
+                downIcon.className = 'sort-down transition-colors duration-200 text-black';
+
+                if (state === 'asc') {
+                    // 오름차순(▲) 선택 시: 위쪽은 빨간색, 아래쪽(묶음)은 회색
+                    upIcon.classList.replace('text-black', 'text-red-500');
+                    downIcon.classList.replace('text-black', 'text-gray-300');
+                } else if (state === 'desc') {
+                    // 내림차순(▼) 선택 시: 아래쪽은 파란색, 위쪽(묶음)은 회색
+                    downIcon.classList.replace('text-black', 'text-blue-500');
+                    upIcon.classList.replace('text-black', 'text-gray-300');
+                }
+            });
+        }
+
+        function updateDashboard(shouldResetSubFilters = false) {
+            const district = document.getElementById('districtFilter').value;
+            const selectedApt = document.getElementById('aptFilter').value;
+            const selectedAreaInt = document.getElementById('areaFilter').value;
+
+            let data = district === '전체' ? [...rawData] : rawData.filter(item => item['법정동'] === district);
+
+            if (shouldResetSubFilters) {
+                updateSubFilters(data);
+                document.getElementById('aptFilter').value = '전체';
+                document.getElementById('areaFilter').value = '전체';
+            } else {
+                if (selectedApt !== '전체') data = data.filter(item => item['아파트명'] === selectedApt);
+                if (selectedAreaInt !== '전체') {
+                    data = data.filter(item => Math.floor(parseFloat(item['전용면적'] || 0)) === parseInt(selectedAreaInt));
+                }
+            }
+
+            // [다중 정렬(1차, 2차) 로직]
+            data.sort((a, b) => {
+                // 1. 사용자가 클릭한 가격 정렬 조건들 (먼저 클릭한 것이 1차 정렬, 다음이 2차 정렬)
+                for (let col of priceSorts.order) {
+                    const key = col === 'deposit' ? '보증금액' : '월세금액';
+                    const valA = (parseInt(a[key]?.replace(/,/g, '')) || 0) * 10;
+                    const valB = (parseInt(b[key]?.replace(/,/g, '')) || 0) * 10;
+                    
+                    // 두 값이 다를 때만 해당 정렬 기준으로 승부 결정, 같으면 다음 순위 정렬로 넘어감
+                    if (valA !== valB) {
+                        return priceSorts[col] === 'asc' ? valA - valB : valB - valA;
+                    }
+                }
+
+                // 2. 가격 정렬이 없거나, 보증금/월세가 모두 같을 때 적용되는 기본(보조) 정렬
+                if (a['아파트명'] < b['아파트명']) return -1;
+                if (a['아파트명'] > b['아파트명']) return 1;
+                
+                const areaA = parseFloat(a['전용면적']) || 0;
+                const areaB = parseFloat(b['전용면적']) || 0;
+                if (areaA !== areaB) return areaA - areaB;
+
+                const dateA = new Date(a['계약년도'], a['계약월']-1, a['계약일']);
+                const dateB = new Date(b['계약년도'], b['계약월']-1, b['계약일']);
+                return dateA - dateB;
+            });
+
+            renderSummary(data);
+            renderChart(data, district, selectedApt === '전체' ? '' : selectedApt);
+            renderTable(data);
+        }
+
+        function renderSummary(data) {
+            const count = data.length;
+            let totalDep = 0, maxDep = 0, totalRent = 0;
+            data.forEach(item => {
+                const dep = (parseInt(item['보증금액']?.replace(/,/g, '')) || 0) * 10;
+                const rent = (parseInt(item['월세금액']?.replace(/,/g, '')) || 0) * 10;
+                totalDep += dep; totalRent += rent;
+                if (dep > maxDep) maxDep = dep;
+            });
+            const avgDep = count > 0 ? Math.round(totalDep / count) : 0;
+            const avgRent = count > 0 ? Math.round(totalRent / count) : 0;
+
+            document.getElementById('totalCount').innerText = `${count.toLocaleString()}건`;
+            document.getElementById('avgDeposit').innerText = `${avgDep.toLocaleString()}천원`;
+            document.getElementById('maxDeposit').innerText = `${maxDep.toLocaleString()}천원`;
+            document.getElementById('avgRent').innerText = `${avgRent.toLocaleString()}천원`;
+        }
+
+        function renderTable(data) {
+            const tableBody = document.getElementById('tableBody');
+            tableBody.innerHTML = '';
+            document.getElementById('tableCount').innerText = `총 ${data.length.toLocaleString()}건`;
+            
+            data.forEach(item => {
+                const depVal = (parseInt(item['보증금액']?.replace(/,/g, '')) || 0) * 10;
+                const rentVal = (parseInt(item['월세금액']?.replace(/,/g, '')) || 0) * 10;
+                
+                // 가독성 개선: 홀수행 흰색(odd:bg-white), 짝수행 옅은 회색(even:bg-gray-50)
+                // 마우스 호버 시 옅은 파란색(hover:!bg-blue-50)으로 하이라이트 처리 (!important 적용으로 최우선 반영)
+                const row = `
+                    <tr class="odd:bg-white even:bg-gray-50 hover:!bg-blue-50 transition-colors duration-200 cursor-default">
+                        <td class="py-4 pl-2 text-gray-500 font-medium">${item['계약년도']}.${item['계약월']}.${item['계약일']}</td>
+                        <td class="py-4 font-semibold text-gray-900">${item['아파트명']}</td>
+                        <td class="py-4 text-gray-600">${item['법정동']}</td>
+                        <td class="py-4 text-gray-600">${item['전용면적']}㎡</td>
+                        <td class="py-4 text-gray-600">${item['층']}층</td>
+                        <td class="py-4 text-right font-bold text-gray-900">${depVal.toLocaleString()}</td>
+                        <td class="py-4 pr-2 text-right font-bold text-gray-900">${rentVal.toLocaleString()}</td>
+                    </tr>`;
+                tableBody.insertAdjacentHTML('beforeend', row);
+            });
+        }
+
+        // 차트 함수 등은 생략 (기존과 동일하게 유지됨)
+        function renderChart(data, district, apt) {
+            const monthlyData = {};
+            data.forEach(item => {
+                const monthKey = `${item['계약년도']}.${item['계약월']}`;
+                if (!monthlyData[monthKey]) monthlyData[monthKey] = { depSum: 0, rentSum: 0, count: 0 };
+                monthlyData[monthKey].depSum += (parseInt(item['보증금액']?.replace(/,/g, '')) || 0) * 10;
+                monthlyData[monthKey].rentSum += (parseInt(item['월세금액']?.replace(/,/g, '')) || 0) * 10;
+                monthlyData[monthKey].count++;
+            });
+            const labels = Object.keys(monthlyData).sort();
+            const avgDeps = labels.map(l => Math.round(monthlyData[l].depSum / monthlyData[l].count));
+            const avgRents = labels.map(l => Math.round(monthlyData[l].rentSum / monthlyData[l].count));
+            document.getElementById('chartTitle').innerText = `${district} ${apt} 실거래 추이 (천원)`;
+            const ctx = document.getElementById('monthlyChart').getContext('2d');
+            if (myChart) myChart.destroy();
+            myChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        { label: '평균 보증금', data: avgDeps, borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.05)', fill: true, tension: 0.4, yAxisID: 'y' },
+                        { label: '평균 월세', data: avgRents, borderColor: '#a855f7', backgroundColor: 'transparent', borderDash: [5, 5], tension: 0.4, yAxisID: 'y1' }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { position: 'left', title: { display: true, text: '보증금 (천원)' } },
+                        y1: { position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: '월세 (천원)' } }
+                    }
+                }
+            });
+        }
+
+        window.onload = initDashboard;
+    </script>
+</body>
+</html>
